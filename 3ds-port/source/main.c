@@ -170,7 +170,44 @@ char *reroll_word(char *output, Blank *blanks, int blank_count, int reroll_index
     return output;
 }
 
-void print_wrapped(const char *text, int max_width) {
+// Walks the text exactly like print_wrapped, but instead of printing,
+// records which wrapped ROW and COLUMN each character index lands on.
+void compute_wrap_positions(const char *text, int max_width, int *char_to_row, int *char_to_col) {
+    int len = strlen(text);
+    int col = 0;
+    int row = 0;
+    int i = 0;
+
+    while (i < len) {
+        int word_start = i;
+        while (i < len && text[i] != ' ') {
+            i++;
+        }
+        int word_len = i - word_start;
+
+        if (col > 0 && col + 1 + word_len > max_width) {
+            row++;
+            col = 0;
+        } else if (col > 0) {
+            col++;  // account for the space before this word
+        }
+
+        for (int j = word_start; j < i; j++) {
+            char_to_row[j] = row;
+            char_to_col[j] = col;
+            col++;
+        }
+
+        if (i < len && text[i] == ' ') {
+            char_to_row[i] = row;
+            char_to_col[i] = col;
+            i++;
+        }
+    }
+}
+
+// Prints text wrapped by word, with an extra blank line between wrapped rows for spacing
+void print_wrapped(const char *text, int max_width, Blank *blanks, int blank_count) {
     int len = strlen(text);
     int col = 0;
     int i = 0;
@@ -183,16 +220,40 @@ void print_wrapped(const char *text, int max_width) {
         int word_len = i - word_start;
 
         if (col > 0 && col + 1 + word_len > max_width) {
-            printf("\n");
+            printf("\n\n");
             col = 0;
         } else if (col > 0) {
             printf(" ");
             col++;
         }
 
+        // check if this word is a blank, and if so, which category
+        char *bg_code = NULL;
+        for (int b = 0; b < blank_count; b++) {
+            if (blanks[b].start_pos == word_start) {
+                if (strcmp(blanks[b].category, "noun") == 0) {
+                    bg_code = "\x1b[42m";
+                } else if (strcmp(blanks[b].category, "adjective") == 0) {
+                    bg_code = "\x1b[45m";
+                } else if (strcmp(blanks[b].category, "verb") == 0) {
+                    bg_code = "\x1b[44m";
+                }
+                break;
+            }
+        }
+
+        if (bg_code != NULL) {
+            printf("%s", bg_code);
+        }
+
         for (int j = word_start; j < i; j++) {
             printf("%c", text[j]);
         }
+
+        if (bg_code != NULL) {
+            printf("\x1b[0m");  // reset back to default
+        }
+
         col += word_len;
 
         if (i < len && text[i] == ' ') {
@@ -201,11 +262,19 @@ void print_wrapped(const char *text, int max_width) {
     }
 }
 
-int find_tapped_blank(touchPosition touch, Blank *blanks, int blank_count) {
-    int column = touch.px / 8;
+// Maps a raw touch position to a blank index, accounting for multi-row wrapping
+// and the extra blank spacer row print_wrapped inserts between wrapped rows.
+int find_tapped_blank(touchPosition touch, Blank *blanks, int blank_count, int *char_to_row, int *char_to_col) {
+    int tapped_col = touch.px / 8;
+    int console_row = touch.py / 8;
+    int tapped_wrapped_row = console_row / 2;  // 2 console rows per wrapped row (text + spacer)
 
     for (int b = 0; b < blank_count; b++) {
-        if (column >= blanks[b].start_pos && column < blanks[b].start_pos + blanks[b].length) {
+        int blank_row = char_to_row[blanks[b].start_pos];
+        int blank_col_start = char_to_col[blanks[b].start_pos];
+        int blank_col_end = blank_col_start + blanks[b].length;
+
+        if (blank_row == tapped_wrapped_row && tapped_col >= blank_col_start && tapped_col < blank_col_end) {
             return b;
         }
     }
@@ -213,8 +282,17 @@ int find_tapped_blank(touchPosition touch, Blank *blanks, int blank_count) {
     return -1;
 }
 
+void redraw_current_line(const char *line_text, int *char_to_row, int *char_to_col, Blank *blanks, int blank_count) {
+    printf("\x1b[2J");
+    printf("\x1b[1;1H");
+    compute_wrap_positions(line_text, 38, char_to_row, char_to_col);
+    print_wrapped(line_text, 38, blanks, blank_count);
+    printf("\n\nTap a word to reroll it.\nA: confirm line   START: exit");
+}
+
 void start_new_line(cJSON *templates, cJSON *words, int template_count,
-                     char **current_line_text, Blank *blanks, int *blank_count) {
+                     char **current_line_text, Blank *blanks, int *blank_count,
+                     int *char_to_row, int *char_to_col) {
     if (*current_line_text != NULL) {
         free(*current_line_text);
     }
@@ -222,10 +300,7 @@ void start_new_line(cJSON *templates, cJSON *words, int template_count,
     cJSON *template = cJSON_GetArrayItem(templates, random_index(template_count));
     *current_line_text = generate_poem_line(template->valuestring, words, blanks, blank_count);
 
-    printf("\x1b[2J");
-    printf("\x1b[1;1H");
-    print_wrapped(*current_line_text, 38);
-    printf("\n\nTap a word to reroll it.\nA: confirm line   START: exit");
+    redraw_current_line(*current_line_text, char_to_row, char_to_col, blanks, *blank_count);
 }
 
 int main(int argc, char **argv) {
@@ -235,6 +310,9 @@ int main(int argc, char **argv) {
     char *current_line_text = NULL;
     Blank current_blanks[20];
     int current_blank_count = 0;
+
+    int char_to_row[512];
+    int char_to_col[512];
 
     PrintConsole topScreen, bottomScreen;
 
@@ -268,7 +346,8 @@ int main(int argc, char **argv) {
 
     int poem_done = 0;
 
-    start_new_line(templates, words, template_count, &current_line_text, current_blanks, &current_blank_count);
+    start_new_line(templates, words, template_count, &current_line_text,
+                   current_blanks, &current_blank_count, char_to_row, char_to_col);
 
     while (aptMainLoop()) {
         hidScanInput();
@@ -281,13 +360,10 @@ int main(int argc, char **argv) {
 
         if (!poem_done) {
             if (kDown & KEY_TOUCH) {
-                int tapped = find_tapped_blank(touch, current_blanks, current_blank_count);
+                int tapped = find_tapped_blank(touch, current_blanks, current_blank_count, char_to_row, char_to_col);
                 if (tapped != -1) {
                     current_line_text = reroll_word(current_line_text, current_blanks, current_blank_count, tapped, words);
-                    printf("\x1b[2J");
-                    printf("\x1b[1;1H");
-                    print_wrapped(current_line_text, 38);
-                    printf("\n\nTap a word to reroll it.\nA: confirm line   START: exit");
+                    redraw_current_line(current_line_text, char_to_row, char_to_col, current_blanks, current_blank_count);
                 }
             }
 
@@ -295,19 +371,18 @@ int main(int argc, char **argv) {
                 completed_lines[current_line] = current_line_text;
                 current_line_text = NULL;
 
-                // print this newly confirmed line on the top screen
                 consoleSelect(&topScreen);
-                print_wrapped(completed_lines[current_line], 48);
+                print_wrapped(completed_lines[current_line], 48, current_blanks, current_blank_count);
                 printf("\n\n");
-                consoleSelect(&bottomScreen);  // switch back so bottom-screen editing keeps working
+                consoleSelect(&bottomScreen);
 
                 current_line++;
 
                 if (current_line < 5) {
-                    start_new_line(templates, words, template_count, &current_line_text, current_blanks, &current_blank_count);
+                    start_new_line(templates, words, template_count, &current_line_text,
+                                   current_blanks, &current_blank_count, char_to_row, char_to_col);
                 } else {
                     poem_done = 1;
-                    consoleSelect(&bottomScreen);
                     printf("\x1b[2J");
                     printf("\x1b[1;1H");
                     printf("Poem complete!\nSTART: exit");
