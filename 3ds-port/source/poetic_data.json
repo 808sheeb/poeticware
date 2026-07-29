@@ -1,0 +1,12 @@
+{
+	"templates": [
+		"how {adjective} {noun} {verb} through {noun} we {adjective},",
+		"under {noun} of {noun}, dreamers could {verb},",
+		"all of {noun}, here for you. please {verb}, even {verb},"
+	],
+	"words": {
+		"adjective": ["cold", "shy", "fragile", "wild", "misty", "achieved", "lost", "fought", "found", "wrote"],
+		"noun": ["winds", "dreams", "worlds", "ones", "gardens", "views", "vistas", "worlds", "loves", "books", "shelter", "demons", "cloth", "dark", "clouds", "lightning", "beings", "shadows", "flights", "loss"],
+		"verb": ["become", "roam", "bleed", "cry", "explore", "weave", "sway", "feel", "eat", "take", "destroy", "succumb", "smudge", "try", "take", "eat", "rot", "profess"]
+	}
+}
