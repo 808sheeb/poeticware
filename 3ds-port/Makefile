@@ -31,7 +31,10 @@ include $(DEVKITARM)/3ds_rules
 #     - icon.png
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
-TARGET		:=	$(notdir $(CURDIR))
+TARGET		:=	poeticWare
+APP_TITLE	:= 	poeticWare
+APP_DESCRIPTION	:= 	generative poetry engine
+APP_AUTHOR	:= 	Lockbearer
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
