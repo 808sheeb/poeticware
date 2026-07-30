@@ -1,2 +1,2 @@
-# poeticware
-poeticware 3ds
+# poeticWare
+A generative poetry engine on 3DS
