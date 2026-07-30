@@ -18,6 +18,9 @@ typedef struct {
 #define LINE_HEIGHT 19.0f
 #define LINE_GAP 5.0f
 #define MAX_ROWS 8
+#define GLYPH_HEIGHT 17.0f
+#define HIGHLIGHT_PAD_X 2.5f
+#define HIGHLIGHT_PAD_Y 0.0f
 
 char* read_file(const char* filename) {
     FILE *fp = fopen(filename, "r");
@@ -175,12 +178,22 @@ char *reroll_word(char *output, Blank *blanks, int blank_count, int reroll_index
     return output;
 }
 
+// ==================== CATEGORY HIGHLIGHT COLORS ====================
+// This is the ONLY place you need to touch when you add a new word
+// category to poetic_data.json (e.g. "adverb"). Just add another
+// "if (strcmp(...))" line below, matching the category name exactly
+// as it appears in your JSON, and pick any C2D_Color32(r, g, b, 255).
 u32 category_color(const char *category) {
-    if (strcmp(category, "noun") == 0) return C2D_Color32(40, 160, 70, 255);
-    if (strcmp(category, "adjective") == 0) return C2D_Color32(160, 40, 160, 255);
-    if (strcmp(category, "verb") == 0) return C2D_Color32(40, 70, 200, 255);
-    return C2D_Color32(255, 255, 255, 255);
+    if (strcmp(category, "noun") == 0)      return C2D_Color32(40, 160, 70, 255);   // green
+    if (strcmp(category, "adjective") == 0) return C2D_Color32(160, 40, 160, 255);  // magenta
+    if (strcmp(category, "verb") == 0)      return C2D_Color32(40, 70, 200, 255);   // blue
+
+    // Example for adding a new category:
+    // if (strcmp(category, "adverb") == 0) return C2D_Color32(200, 140, 20, 255);
+
+    return C2D_Color32(90, 90, 90, 255); // fallback color for any unrecognized category
 }
+// =====================================================================
 
 int blank_at_position(Blank *blanks, int blank_count, int pos) {
     for (int b = 0; b < blank_count; b++) {
@@ -191,95 +204,168 @@ int blank_at_position(Blank *blanks, int blank_count, int pos) {
     return -1;
 }
 
-int draw_poem_line(const char *text, Blank *blanks, int blank_count,
-                    C2D_Font fontReg, C2D_Font fontItal, C2D_TextBuf textBuf,
-                    int max_width_chars, float screen_width, float left_margin,
-                    int centered, float start_y,
-                    int *char_to_row, int *char_to_col, float *row_x_offset) {
+typedef struct {
+    int start;
+    int len;
+} WordSpan;
+
+int split_words(const char *text, WordSpan *out_words, int max_words) {
     int len = strlen(text);
-    int i = 0;
-    int row = 0;
-    int col = 0;
+    int i = 0, count = 0;
+    while (i < len && count < max_words) {
+        int start = i;
+        while (i < len && text[i] != ' ') i++;
+        out_words[count].start = start;
+        out_words[count].len = i - start;
+        count++;
+        if (i < len && text[i] == ' ') i++;
+    }
+    return count;
+}
 
-    while (i < len) {
-        int word_start = i;
-        while (i < len && text[i] != ' ') {
-            i++;
-        }
-        int word_len = i - word_start;
-
-        if (col > 0 && col + 1 + word_len > max_width_chars) {
+// Greedily assigns each word to a row, then rebalances: if the last row
+// has fewer than min_last_row_words words, pull the last word of the
+// previous row down onto it -- but only if it still fits within
+// max_width_chars. Repeats until satisfied or no more moves are possible.
+int wrap_words_balanced(WordSpan *words, int word_count, int max_width_chars,
+                         int min_last_row_words, int *word_row) {
+    int row = 0, col = 0;
+    for (int w = 0; w < word_count; w++) {
+        int wlen = words[w].len;
+        if (col > 0 && col + 1 + wlen > max_width_chars) {
             row++;
             col = 0;
         } else if (col > 0) {
             col++;
         }
+        col += wlen;
+        word_row[w] = row;
+    }
+    int total_rows = row + 1;
 
-        for (int j = word_start; j < i; j++) {
-            char_to_row[j] = row;
-            char_to_col[j] = col;
-            col++;
+    if (total_rows <= 1) return total_rows;
+
+    int safety = 0;
+    while (safety < 20) {
+        safety++;
+        int last_row = total_rows - 1;
+        int count_last = 0;
+        for (int w = 0; w < word_count; w++) if (word_row[w] == last_row) count_last++;
+        if (count_last >= min_last_row_words) break;
+
+        int prev_row = last_row - 1;
+        if (prev_row < 0) break;
+
+        int candidate = -1;
+        for (int w = word_count - 1; w >= 0; w--) {
+            if (word_row[w] == prev_row) { candidate = w; break; }
         }
+        if (candidate == -1) break;
 
-        if (i < len && text[i] == ' ') {
-            i++;
+        int last_row_width = 0;
+        int first = 1;
+        for (int w = 0; w < word_count; w++) {
+            if (word_row[w] == last_row) {
+                if (!first) last_row_width += 1;
+                last_row_width += words[w].len;
+                first = 0;
+            }
+        }
+        int new_width = words[candidate].len + (last_row_width > 0 ? 1 : 0) + last_row_width;
+        if (new_width > max_width_chars) break; // wouldn't fit, stop trying
+
+        word_row[candidate] = last_row;
+
+        int prev_count = 0;
+        for (int w = 0; w < word_count; w++) if (word_row[w] == prev_row) prev_count++;
+        if (prev_count == 0) {
+            for (int w = 0; w < word_count; w++) {
+                if (word_row[w] > prev_row) word_row[w]--;
+            }
+            total_rows--;
         }
     }
 
-    int total_rows = row + 1;
+    return total_rows;
+}
 
+int count_wrapped_rows(const char *text, int max_width_chars) {
+    WordSpan words[60];
+    int word_count = split_words(text, words, 60);
+    int word_row[60];
+    return wrap_words_balanced(words, word_count, max_width_chars, 3, word_row);
+}
+
+int draw_poem_line(const char *text, Blank *blanks, int blank_count,
+                    C2D_Font fontReg, C2D_Font fontItal, C2D_TextBuf textBuf,
+                    int max_width_chars, float screen_width, float left_margin,
+                    int centered, float start_y,
+                    int *char_to_row, int *char_to_col, float *row_x_offset) {
+    WordSpan words[60];
+    int word_count = split_words(text, words, 60);
+
+    int word_row[60];
+    int total_rows = wrap_words_balanced(words, word_count, max_width_chars, 3, word_row);
+
+    int word_col[60];
     int row_char_count[MAX_ROWS];
     for (int r = 0; r < MAX_ROWS; r++) row_char_count[r] = 0;
-    for (int j = 0; j < len; j++) {
-        int r = char_to_row[j];
-        int c = char_to_col[j];
-        if (c + 1 > row_char_count[r]) row_char_count[r] = c + 1;
+
+    for (int r = 0; r < total_rows; r++) {
+        int col = 0;
+        int first = 1;
+        for (int w = 0; w < word_count; w++) {
+            if (word_row[w] == r) {
+                if (!first) col++;
+                word_col[w] = col;
+                col += words[w].len;
+                first = 0;
+            }
+        }
+        row_char_count[r] = col;
     }
 
     for (int r = 0; r < total_rows; r++) {
         float row_width_px = row_char_count[r] * CHAR_WIDTH;
-        if (centered) {
-            row_x_offset[r] = (screen_width - row_width_px) / 2.0f;
-        } else {
-            row_x_offset[r] = left_margin;
+        row_x_offset[r] = centered ? (screen_width - row_width_px) / 2.0f : left_margin;
+    }
+
+    for (int w = 0; w < word_count; w++) {
+        for (int j = 0; j < words[w].len; j++) {
+            char_to_row[words[w].start + j] = word_row[w];
+            char_to_col[words[w].start + j] = word_col[w] + j;
         }
     }
 
-    i = 0;
-    while (i < len) {
-        int word_start = i;
-        while (i < len && text[i] != ' ') {
-            i++;
-        }
-
-        int r = char_to_row[word_start];
-        int c = char_to_col[word_start];
+    for (int w = 0; w < word_count; w++) {
+        int r = word_row[w];
+        int c = word_col[w];
         float x = row_x_offset[r] + c * CHAR_WIDTH;
         float y = start_y + r * LINE_HEIGHT;
 
         char word_buf[60];
-        int wlen = i - word_start;
-        strncpy(word_buf, text + word_start, wlen);
+        int wlen = words[w].len;
+        strncpy(word_buf, text + words[w].start, wlen);
         word_buf[wlen] = '\0';
 
-        int blank_idx = blank_at_position(blanks, blank_count, word_start);
-
+        int blank_idx = blank_at_position(blanks, blank_count, words[w].start);
         C2D_Font use_font = fontReg;
-        u32 use_color = C2D_Color32(255, 255, 255, 255);
 
         if (blank_idx != -1) {
             use_font = fontItal;
-            use_color = category_color(blanks[blank_idx].category);
+            int highlight_len = blanks[blank_idx].length;
+            float rect_w = highlight_len * CHAR_WIDTH + HIGHLIGHT_PAD_X * 2.0f;
+            float rect_h = GLYPH_HEIGHT + HIGHLIGHT_PAD_Y * 2.0f;
+            float rect_y = y + (LINE_HEIGHT - GLYPH_HEIGHT) / 2.0f - HIGHLIGHT_PAD_Y;
+            C2D_DrawRectSolid(x - HIGHLIGHT_PAD_X, rect_y, 0.4f, rect_w, rect_h,
+                               category_color(blanks[blank_idx].category));
         }
 
         C2D_Text wordText;
         C2D_TextFontParse(&wordText, use_font, textBuf, word_buf);
         C2D_TextOptimize(&wordText);
-        C2D_DrawText(&wordText, C2D_WithColor, x, y, 0.5f, FONT_SCALE, FONT_SCALE, use_color);
-
-        if (i < len && text[i] == ' ') {
-            i++;
-        }
+        C2D_DrawText(&wordText, C2D_WithColor, x, y, 0.5f, FONT_SCALE, FONT_SCALE,
+                     C2D_Color32(255, 255, 255, 255));
     }
 
     return total_rows;
@@ -304,6 +390,17 @@ int find_tapped_blank(touchPosition touch, Blank *blanks, int blank_count,
     }
 
     return -1;
+}
+
+void draw_instructions(C2D_Font font, C2D_TextBuf textBuf, const char *msg, float y) {
+    C2D_Text text;
+    C2D_TextFontParse(&text, font, textBuf, msg);
+    C2D_TextOptimize(&text);
+    float width, height;
+    C2D_TextGetDimensions(&text, FONT_SCALE, FONT_SCALE, &width, &height);
+    float x = (320.0f - width) / 2.0f;
+    C2D_DrawText(&text, C2D_WithColor, x, y, 0.5f, FONT_SCALE, FONT_SCALE,
+                 C2D_Color32(160, 160, 160, 255));
 }
 
 int main(int argc, char **argv) {
@@ -352,7 +449,22 @@ int main(int argc, char **argv) {
         touchPosition touch;
         hidTouchRead(&touch);
 
-        if (kDown & KEY_START) break;
+        // START now resets the whole poem and begins a new one,
+        // instead of exiting the app.
+        if (kDown & KEY_START) {
+            for (int l = 0; l < current_line; l++) {
+                free(completed_lines[l]);
+            }
+            if (current_line_text != NULL) {
+                free(current_line_text);
+            }
+
+            current_line = 0;
+            poem_done = 0;
+
+            cJSON *t = cJSON_GetArrayItem(templates, random_index(template_count));
+            current_line_text = generate_poem_line(t->valuestring, words, current_blanks, &current_blank_count);
+        }
 
         if (!poem_done) {
             if (kDown & KEY_TOUCH) {
@@ -384,10 +496,22 @@ int main(int argc, char **argv) {
         C2D_TextBufClear(textBuf);
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
 
+        // --- top screen: completed lines, left-aligned, vertically centered as a block ---
         C2D_TargetClear(top, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(top);
         {
-            float y = 15.0f;
+            // Pre-pass: figure out total height of all completed lines so far,
+            // so we can center the whole block vertically on the 240px-tall screen.
+            float total_height = 0.0f;
+            for (int l = 0; l < current_line; l++) {
+                int rows = count_wrapped_rows(completed_lines[l], 52);
+                total_height += rows * LINE_HEIGHT;
+                if (l < current_line - 1) total_height += LINE_GAP;
+            }
+
+            float y = (240.0f - total_height) / 2.0f;
+            if (y < 10.0f) y = 10.0f;
+
             for (int l = 0; l < current_line; l++) {
                 int rows_used = draw_poem_line(completed_lines[l], completed_blanks[l], completed_blank_counts[l],
                                                 fontReg, fontItal, textBuf,
@@ -397,6 +521,7 @@ int main(int argc, char **argv) {
             }
         }
 
+        // --- bottom screen: current editable line, centered, plus instructions ---
         C2D_TargetClear(bottom, C2D_Color32(0, 0, 0, 255));
         C2D_SceneBegin(bottom);
         if (!poem_done && current_line_text != NULL) {
@@ -405,6 +530,8 @@ int main(int argc, char **argv) {
                             40, 320.0f, 0.0f, 1, 40.0f,
                             char_to_row, char_to_col, row_x_offset);
         }
+
+        draw_instructions(fontReg, textBuf, "A: confirm line   START: new poem", 210.0f);
 
         C3D_FrameEnd(0);
     }
