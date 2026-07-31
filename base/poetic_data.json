@@ -1,0 +1,28 @@
+{
+	"templates": [
+		"how {adjective} {things} {edverb} through {things} we {adjective},",
+		"under {place} of {things}, {people} could {verb},",
+		"all of {things}, here for you. please {verb}, even {verb},",
+		"what do you do {_to}, when you think of {place},",
+		"is it where {things} touches {adjective} {place}",
+		"holding {adjective}, {place} laboured, guide me {place}",
+		"{place} that we could {verb} alone, overthrown",
+		"oh, {people} {adjective} {things},",
+		"{verb} {people} desperately in {_to} of,",
+		"plates, cooked for {people}, {adjective}, {adjective}, imbued",
+		"empty {people} go, {ingverb} from our thoughts",
+		"{place} were our {things}, {ingverb} in {adjective}",
+		"no {people} could have {adjective} as you",
+		"hands {adjective}, breath {edverb}, cheeks {adjective}"
+	],
+	"words": {
+		"adjective": ["cold", "shy", "fragile", "wild", "misty", "achieved", "lost", "fought", "found", "wrote", "infinite", "finite", "lush", "angelic", "astral", "auroral", "blissful", "buoyant", "celestial", "divine", "dreamlike", "effervescent", "elysian", "enchanting", "ethereal", "floating", "gossamer", "halcyon", "heavenly", "incandescent", "ineffable", "lucent", "luminous", "mesmeric", "opalescent", "otherworldly", "pearlescent", "radiant", "seraphic", "shimmering", "spellbinding", "transcendent", "unearthly"],
+		"things": ["winds", "dreams", "worlds", "ones", "gardens", "views", "vistas", "worlds", "loves", "books", "shelter", "demons", "cloth", "dark", "clouds", "lightning", "beings", "shadows", "flights", "loss", "ideas"],
+		"verb": ["become", "roam", "bleed", "cry", "explore", "weave", "sway", "feel", "eat", "take", "destroy", "succumb", "survive", "smudge", "try", "take", "eat", "rot", "profess", "stop", "cease", "falter", "sing", "scream"],
+		"_to": ["dream_of", "profess_to", "cry_for", "need", "think_of", "feel", "run_from", "run_to", "stray_from", "leave_behind"],
+		"place": ["home", "us", "being_here", "where", "clouds", "gardens", "infinite_skies", "the_ether", "ruins", "memories", "comfort", "love", "loss", "asylums", "bastions", "castles", "catacombs", "chateaux", "citadels", "cosmos", "dimensions", "estates", "fortresses", "galaxies", "halls", "havens", "hearths", "hideaways", "homes", "keeps", "kingdoms", "labyrinths", "manors", "oases", "palaces", "planes", "planets", "realms", "refuges", "remnants", "sanctuaries", "shelters", "shrines", "spheres", "spires", "temples", "tombs", "universes", "wastelands", "worlds"],
+		"people": ["us", "they", "i", "im", "we", "you", "he", "she", "them", "her", "him", "choirs", "flights", "covens", "collectives"],
+		"ingverb": ["fading", "mourning", "aching", "chilling", "cooling", "decaying", "dissolving", "echoing", "forsaking", "haunting", "lingering", "rotting", "wailing"],
+		"edverb": ["chilled", "bled", "frayed", "haunted", "lamented", "orphaned", "scarred", "splintered", "veiled", "withered", "wasted", "eroded"]
+	}
+}

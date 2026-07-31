@@ -4,3 +4,5 @@ main
 *.3dsx
 *.smdh
 build/
+base/bannertool
+base/makerom
